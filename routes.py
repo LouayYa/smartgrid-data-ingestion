@@ -18,7 +18,14 @@ from schemas import (
 
 router = APIRouter(prefix="/api/v1", tags=["consumption"])
 
-DEFAULT_CSV_PATH = "household_power_consumption.csv"
+# Resolve the default CSV path relative to this file's directory so the
+# server finds the dataset regardless of where uvicorn is launched from.
+# Can be overridden via the CSV_PATH env var or the ?csv_path query param.
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_CSV_PATH = os.environ.get(
+    "CSV_PATH",
+    os.path.join(_APP_DIR, "household_power_consumption.csv"),
+)
 BATCH_SIZE = 5000
 
 NUMERIC_COLUMNS = [
@@ -67,11 +74,19 @@ def load_dataset(
     Idempotent: clears existing rows before inserting. Missing values ("?")
     become NULL. Dates are stored verbatim as VARCHAR (no format coercion).
     """
-    if not os.path.isfile(csv_path):
+    # Try the given path, then CWD-relative, then app-dir-relative as fallbacks.
+    candidates = [csv_path]
+    if not os.path.isabs(csv_path):
+        candidates.append(os.path.abspath(csv_path))
+        candidates.append(os.path.join(_APP_DIR, os.path.basename(csv_path)))
+
+    resolved = next((p for p in candidates if os.path.isfile(p)), None)
+    if resolved is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"CSV file not found: {csv_path}",
+            detail=f"CSV file not found. Tried: {candidates}",
         )
+    csv_path = resolved
 
     try:
         # Read CSV — treat "?" as NaN so numeric columns parse as float.
