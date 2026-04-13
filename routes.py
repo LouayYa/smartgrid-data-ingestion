@@ -227,26 +227,36 @@ def create_consumption(payload: ConsumptionCreate, db: Session = Depends(get_db)
         )
 
 
-@router.put("/consumption/{record_id}", response_model=ConsumptionResponse)
+@router.put("/consumption/{record_id}")
 def update_consumption(
     record_id: int,
     payload: ConsumptionUpdate,
     db: Session = Depends(get_db),
 ):
-    """Update an existing consumption record."""
-    # TODO: implement update logic
-    return ConsumptionResponse(
-        ID=record_id,
-        Date=payload.Date or "",
-        Time=payload.Time or "",
-        Global_active_power=payload.Global_active_power,
-        Global_reactive_power=payload.Global_reactive_power,
-        Voltage=payload.Voltage,
-        Global_intensity=payload.Global_intensity,
-        Sub_metering_1=payload.Sub_metering_1,
-        Sub_metering_2=payload.Sub_metering_2,
-        Sub_metering_3=payload.Sub_metering_3,
+    """Update an existing consumption record (partial update)."""
+    record = (
+        db.query(HouseholdPowerConsumption)
+        .filter(HouseholdPowerConsumption.ID == record_id)
+        .first()
     )
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Record not found",
+        )
+
+    updates = payload.model_dump(exclude_unset=True)
+    try:
+        for field, value in updates.items():
+            setattr(record, field, value)
+        db.commit()
+        return {"id": record.ID, "status": "updated"}
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update record: {exc}",
+        )
 
 
 @router.delete("/consumption/{record_id}", status_code=204)
