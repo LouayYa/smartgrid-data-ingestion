@@ -1,9 +1,10 @@
 import os
-from typing import List
+from datetime import date, datetime
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -30,6 +31,26 @@ NUMERIC_COLUMNS = [
     "Sub_metering_3",
 ]
 EXPECTED_COLUMNS = ["Date", "Time", *NUMERIC_COLUMNS]
+
+# Supported date formats in the VARCHAR Date column.
+# Dataset contains both "1/1/07" (d/m/yy) and "30/6/2007" (d/m/yyyy).
+DATE_FORMATS = ("%d/%m/%Y", "%d/%m/%y")
+
+
+def parse_flexible_date(value: str) -> date:
+    """Parse a date string using any of the supported formats.
+
+    Raises ValueError if none of the formats match.
+    """
+    if value is None:
+        raise ValueError("date value is None")
+    s = str(value).strip()
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"Unrecognized date format: {value!r}")
 
 
 @router.post(
@@ -107,10 +128,75 @@ def load_dataset(
 
 
 @router.get("/consumption", response_model=List[ConsumptionResponse])
-def list_consumption(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """List consumption records with pagination."""
-    # TODO: implement list logic
-    return []
+def list_consumption(
+    start_date: Optional[str] = Query(
+        None,
+        description="Inclusive start date. Accepts d/m/yy or d/m/yyyy (e.g. 1/1/07 or 30/6/2007).",
+    ),
+    end_date: Optional[str] = Query(
+        None,
+        description="Inclusive end date. Accepts d/m/yy or d/m/yyyy.",
+    ),
+    limit: int = Query(1000, ge=1, le=100000, description="Max records to return."),
+    offset: int = Query(0, ge=0, description="Number of records to skip."),
+    db: Session = Depends(get_db),
+):
+    """List consumption records, optionally filtered by a date range.
+
+    Without date filters, pagination is applied at the SQL level. When
+    both start_date and end_date are provided, all records are fetched
+    and filtered in Python because Date is stored as VARCHAR in mixed
+    formats (acceptable for a ~260k-row PoC).
+    """
+    if (start_date is None) != (end_date is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date and end_date must be provided together.",
+        )
+
+    if start_date is None and end_date is None:
+        rows = (
+            db.query(HouseholdPowerConsumption)
+            .order_by(HouseholdPowerConsumption.ID)
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return rows
+
+    # Both date bounds provided — parse and filter in Python.
+    try:
+        start = parse_flexible_date(start_date)
+        end = parse_flexible_date(end_date)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid date format: {exc}",
+        )
+
+    if start > end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date must be on or before end_date.",
+        )
+
+    all_rows = (
+        db.query(HouseholdPowerConsumption)
+        .order_by(HouseholdPowerConsumption.ID)
+        .all()
+    )
+
+    filtered = []
+    for row in all_rows:
+        try:
+            row_date = parse_flexible_date(row.Date)
+        except ValueError:
+            # Skip rows whose Date column can't be parsed rather than failing the request.
+            continue
+        if start <= row_date <= end:
+            filtered.append(row)
+
+    return filtered[offset : offset + limit]
 
 
 @router.get("/consumption/{record_id}", response_model=ConsumptionResponse)
