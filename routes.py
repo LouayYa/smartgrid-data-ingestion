@@ -210,11 +210,21 @@ def get_consumption(record_id: int, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/consumption", response_model=ConsumptionResponse, status_code=201)
+@router.post("/consumption", status_code=status.HTTP_201_CREATED)
 def create_consumption(payload: ConsumptionCreate, db: Session = Depends(get_db)):
     """Create a new consumption record."""
-    # TODO: implement create logic
-    return ConsumptionResponse(ID=0, **payload.model_dump())
+    try:
+        record = HouseholdPowerConsumption(**payload.model_dump())
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        return {"id": record.ID, "status": "created"}
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create record: {exc}",
+        )
 
 
 @router.put("/consumption/{record_id}", response_model=ConsumptionResponse)
