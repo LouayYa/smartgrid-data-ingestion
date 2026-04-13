@@ -259,8 +259,27 @@ def update_consumption(
         )
 
 
-@router.delete("/consumption/{record_id}", status_code=204)
+@router.delete("/consumption/{record_id}")
 def delete_consumption(record_id: int, db: Session = Depends(get_db)):
     """Delete a consumption record by ID."""
-    # TODO: implement delete logic
-    return None
+    record = (
+        db.query(HouseholdPowerConsumption)
+        .filter(HouseholdPowerConsumption.ID == record_id)
+        .first()
+    )
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Record not found",
+        )
+
+    try:
+        db.delete(record)
+        db.commit()
+        return {"id": record_id, "status": "deleted"}
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete record: {exc}",
+        )
