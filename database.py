@@ -3,10 +3,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 from config import settings
 
-# SQLite requires a special connect_args; other engines (Azure SQL via pyodbc) do not.
 connect_args = {}
 if settings.DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+elif "mysql" in settings.DATABASE_URL:
+    import ssl
+    ssl_ctx = ssl.create_default_context()
+    connect_args = {"ssl": ssl_ctx}
 
 engine = create_engine(
     settings.DATABASE_URL,
