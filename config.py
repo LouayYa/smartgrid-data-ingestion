@@ -10,7 +10,8 @@ class Settings:
 
     # DATABASE_URL format examples:
     #   SQLite (dev fallback):  sqlite:///./household_power.db
-    #   Azure SQL via pyodbc:   mssql+pyodbc://<user>:<pwd>@<server>.database.windows.net:1433/<db>?driver=ODBC+Driver+18+for+SQL+Server
+    #   postgres:   postgresql://<user>:<pwd>@<server>/<db>
+    
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
         "sqlite:///./household_power.db",
