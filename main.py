@@ -18,10 +18,11 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION, lifespan=lifespan)
 
 # CORS — permissive for development. Tighten in production.
+# Note: wildcard origins cannot be combined with credentials per the CORS spec.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

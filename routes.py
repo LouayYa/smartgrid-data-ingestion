@@ -217,12 +217,17 @@ def list_consumption(
 @router.get("/consumption/{record_id}", response_model=ConsumptionResponse)
 def get_consumption(record_id: int, db: Session = Depends(get_db)):
     """Retrieve a single consumption record by ID."""
-    # TODO: implement retrieval logic
-    return ConsumptionResponse(
-        ID=record_id,
-        Date="",
-        Time="",
+    record = (
+        db.query(HouseholdPowerConsumption)
+        .filter(HouseholdPowerConsumption.ID == record_id)
+        .first()
     )
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Record not found",
+        )
+    return record
 
 
 @router.post("/consumption", status_code=status.HTTP_201_CREATED)
